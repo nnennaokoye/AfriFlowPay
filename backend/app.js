@@ -11,6 +11,9 @@ const paymentRoutes = require('./routes/payment');
 const accountRoutes = require('./routes/account');
 const yellowCardRoutes = require('./routes/yellowcard');
 const invoiceRoutes = require('./routes/invoice');
+const walletRoutes = require('./routes/wallet');
+const withdrawalRoutes = require('./routes/withdrawal');
+const directDepositRoutes = require('./routes/directDeposit');
 
 // Import services for initialization
 const tokenService = require('./services/tokenService');
@@ -42,6 +45,9 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/accounts', accountRoutes);
 app.use('/api/yellowcard', yellowCardRoutes);
 app.use('/api/invoices', invoiceRoutes);
+app.use('/api/wallet', walletRoutes);
+app.use('/api/withdrawals', withdrawalRoutes);
+app.use('/api/direct-deposit', directDepositRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

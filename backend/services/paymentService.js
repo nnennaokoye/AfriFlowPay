@@ -1,5 +1,8 @@
 const crypto = require('crypto');
+const { TransferTransaction, Hbar, TokenTransferTransaction, AccountId } = require('@hashgraph/sdk');
+const hederaClient = require('./hederaClient');
 const accountService = require('./accountService');
+const walletConnectionService = require('./walletConnectionService');
 const tokenService = require('./tokenService');
 const mirrorNodeService = require('./mirrorNodeService');
 
@@ -12,40 +15,22 @@ class PaymentService {
    * Generate payment QR code data
    */
   generatePaymentRequest(merchantAccountId, amount = null, tokenType = 'HBAR') {
-    const nonce = crypto.randomBytes(16).toString('hex');
-    const timestamp = Date.now();
-    
-    const payload = {
-      merchantWallet: merchantAccountId,
-      amount: amount,
-      tokenType: tokenType,
-      nonce: nonce,
-      timestamp: timestamp
-    };
+    try {
+      // Use wallet connection service to store QR payload
+      const { nonce, payload } = walletConnectionService.storeQRPayload(merchantAccountId, amount, tokenType);
 
-    // Create signature for security
-    const signature = crypto
-      .createHash('sha256')
-      .update(JSON.stringify(payload))
-      .digest('hex');
-
-    const paymentData = {
-      ...payload,
-      signature
-    };
-
-    // Store in pending payments
-    this.pendingPayments.set(nonce, {
-      ...paymentData,
-      status: 'pending',
-      createdAt: new Date()
-    });
-
-    return {
-      qrData: JSON.stringify(paymentData),
-      paymentUrl: `${process.env.FRONTEND_URL}/pay?data=${Buffer.from(JSON.stringify(paymentData)).toString('base64')}`,
-      nonce
-    };
+      return {
+        qrData: nonce,
+        paymentLink: `afripayflow.com/pay?data=${nonce}`,
+        merchantWallet: merchantAccountId,
+        amount,
+        tokenType,
+        nonce
+      };
+    } catch (error) {
+      console.error('Error generating payment request:', error);
+      throw error;
+    }
   }
 
   /**
@@ -53,16 +38,24 @@ class PaymentService {
    */
   async processPayment(paymentData, userAccountId, amount) {
     try {
-      const { merchantWallet, tokenType, nonce } = paymentData;
-
-      // Validate payment request
-      if (!this.pendingPayments.has(nonce)) {
-        throw new Error('Invalid or expired payment request');
-      }
-
-      const pendingPayment = this.pendingPayments.get(nonce);
-      if (pendingPayment.status !== 'pending') {
-        throw new Error('Payment already processed');
+      // Handle both nonce string and payment object
+      let nonce, merchantWallet, tokenType;
+      
+      if (typeof paymentData === 'string') {
+        // If paymentData is a nonce string, get the stored QR payload
+        nonce = paymentData;
+        const storedPayload = walletConnectionService.getQRPayload(nonce);
+        if (!storedPayload) {
+          throw new Error('Invalid or expired payment request');
+        }
+        merchantWallet = storedPayload.merchantWallet;
+        tokenType = storedPayload.tokenType || 'HBAR';
+      } else {
+        // If paymentData is an object
+        ({ merchantWallet, tokenType, nonce } = paymentData);
+        if (!this.validatePaymentRequest(paymentData)) {
+          throw new Error('Invalid or expired payment request');
+        }
       }
 
       let transactionResult;
@@ -94,11 +87,15 @@ class PaymentService {
         );
       }
 
-      // Update payment status
-      pendingPayment.status = 'completed';
-      pendingPayment.transactionId = transactionResult.transactionId;
-      pendingPayment.completedAt = new Date();
-      pendingPayment.amount = amount;
+      // Store payment completion info
+      this.pendingPayments.set(nonce, {
+        status: 'completed',
+        transactionId: transactionResult.transactionId,
+        completedAt: new Date(),
+        amount: amount,
+        merchantWallet,
+        tokenType
+      });
 
       console.log(`Payment processed: ${transactionResult.transactionId}`);
 
@@ -133,16 +130,47 @@ class PaymentService {
   }
 
   /**
-   * Validate payment request signature
+   * Validate payment request
    */
   validatePaymentRequest(paymentData) {
-    const { signature, ...payload } = paymentData;
-    const expectedSignature = crypto
-      .createHash('sha256')
-      .update(JSON.stringify(payload))
-      .digest('hex');
+    try {
+      console.log('Validating payment request:', paymentData);
+      
+      if (typeof paymentData === 'string') {
+        // If it's a nonce, get the stored payment request from wallet service
+        console.log('Looking for nonce in wallet service:', paymentData);
+        const storedRequest = walletConnectionService.getQRPayload(paymentData);
+        console.log('Stored request found:', !!storedRequest, storedRequest);
+        return !!storedRequest;
+      }
 
-    return signature === expectedSignature;
+      const { merchantWallet, tokenType, nonce } = paymentData;
+      
+      // Basic validation
+      if (!merchantWallet || !tokenType || !nonce) {
+        return false;
+      }
+
+      // Check if payment request exists and is valid
+      const storedRequest = walletConnectionService.getQRPayload(nonce);
+      if (!storedRequest) {
+        return false;
+      }
+
+      // Validate timestamp (15 minutes expiry)
+      const now = new Date();
+      const requestAge = now - storedRequest.createdAt;
+      const fifteenMinutes = 15 * 60 * 1000;
+      
+      if (requestAge > fifteenMinutes) {
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error validating payment request:', error);
+      return false;
+    }
   }
 }
 
