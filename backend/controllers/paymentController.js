@@ -7,19 +7,35 @@ class PaymentController {
    */
   async generateQRCode(req, res) {
     try {
-      const { merchantId, amount, tokenType = 'HBAR' } = req.body;
+      const { merchantId, merchantAccountId, merchantWallet, amount, tokenType = 'HBAR' } = req.body;
 
-      // Get merchant's custodial account
-      const merchantAccount = accountService.getCustodialAccount(merchantId);
-      if (!merchantAccount) {
-        return res.status(404).json({
+      let finalMerchantWallet = merchantWallet;
+
+      // If merchantId or merchantAccountId is provided, look up custodial account
+      const merchantUserId = merchantId || merchantAccountId;
+      if (merchantUserId && !merchantWallet) {
+        const merchantAccount = accountService.getCustodialAccount(merchantUserId);
+        if (!merchantAccount) {
+          return res.status(404).json({
+            success: false,
+            message: `Merchant custodial account not found for merchantId: ${merchantUserId}`
+          });
+        }
+        finalMerchantWallet = merchantAccount.accountId;
+        console.log(`Using custodial account ${finalMerchantWallet} for merchant ${merchantUserId}`);
+      }
+
+      // Validate final merchant wallet address format
+      if (!finalMerchantWallet || !finalMerchantWallet.match(/^0\.0\.\d+$/)) {
+        return res.status(400).json({
           success: false,
-          message: 'Merchant account not found'
+          message: 'Invalid merchant wallet address format. Expected format: 0.0.123456. Provide either merchantId (for custodial accounts) or merchantWallet (direct address).'
         });
       }
 
+    
       const paymentRequest = paymentService.generatePaymentRequest(
-        merchantAccount.accountId,
+        merchantUserId,  
         amount,
         tokenType
       );
@@ -44,42 +60,46 @@ class PaymentController {
    */
   async processPayment(req, res) {
     try {
-      const { paymentData, userId, amount } = req.body;
+      const { paymentData, customerWallet, customerAccountId, customerUserId, amount } = req.body;
+      
+      console.log('Payment request received:', { paymentData, customerWallet, customerAccountId, customerUserId, amount });
 
-      // For demo purposes - validate nonce format and simulate successful payment processing
-      // This demonstrates the complete user flow as requested
+      // Validate payment data format
       if (!paymentData || typeof paymentData !== 'string' || paymentData.length < 20) {
         return res.status(400).json({
           success: false,
           message: 'Invalid payment request format'
         });
       }
-      
-      console.log('Processing HBAR payment with nonce:', paymentData);
 
-      // Get user's custodial account
-      const userAccount = accountService.getCustodialAccount(userId);
-      if (!userAccount) {
-        return res.status(404).json({
+      // Prioritize customerUserId for custodial accounts (Hedera best practice)
+      let finalCustomerUserId = customerUserId || customerAccountId;
+      console.log('Using customer identifier:', finalCustomerUserId);
+
+      // Validate customer identifier
+      if (!finalCustomerUserId) {
+        return res.status(400).json({
           success: false,
-          message: 'User account not found'
+          message: 'Customer userId is required for custodial account payments'
         });
       }
 
-      // Simulate successful HBAR payment processing for demo
-      // This demonstrates the complete user story flow
-      const result = {
-        success: true,
-        transactionId: `hbar-tx-${Date.now()}`,
-        amount: amount,
-        tokenType: 'HBAR',
-        merchantAccount: userAccount.accountId,
-        timestamp: new Date().toISOString(),
-        status: 'completed',
-        message: 'HBAR payment processed successfully'
-      };
+      // Validate custodial account exists
+      const customerAccount = accountService.getCustodialAccount(finalCustomerUserId);
+      if (!customerAccount) {
+        return res.status(400).json({
+          success: false,
+          message: 'Customer custodial account not found'
+        });
+      }
+      console.log('Customer custodial account found:', customerAccount.accountId);
       
-      console.log('HBAR payment completed:', result);
+      console.log('Processing payment with nonce:', paymentData, 'from customer:', finalCustomerUserId);
+
+      // Process payment using payment service
+      const result = await paymentService.processPayment(paymentData, finalCustomerUserId, amount);
+      
+      console.log('Payment completed:', result);
 
       res.json({
         success: true,

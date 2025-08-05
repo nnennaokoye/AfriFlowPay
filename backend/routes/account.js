@@ -2,16 +2,25 @@ const express = require('express');
 const router = express.Router();
 const accountController = require('../controllers/accountController');
 
-// Create new custodial account
+// Create custodial account for testing
 router.post('/create', accountController.createAccount);
 
-// Get account balance
-router.get('/:userId/balance', accountController.getBalance);
+// Debug: List all custodial accounts
+router.get('/debug/list', accountController.listCustodialAccounts);
 
-// Get transaction history
-router.get('/:userId/transactions', accountController.getTransactionHistory);
+// Get custodial account balance by userId
+router.get('/custodial/:userId/balance', accountController.getCustodialBalance);
 
-// Get account info
-router.get('/:userId/info', accountController.getAccountInfo);
+// Get custodial account transaction history by userId
+router.get('/custodial/:userId/transactions', accountController.getCustodialTransactionHistory);
+
+// Get account balance by wallet address
+router.get('/:walletAddress/balance', accountController.getBalance);
+
+// Get transaction history by wallet address
+router.get('/:walletAddress/transactions', accountController.getTransactionHistory);
+
+// Get account info by wallet address
+router.get('/:walletAddress/info', accountController.getAccountInfo);
 
 module.exports = router;
