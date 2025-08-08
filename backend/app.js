@@ -91,8 +91,6 @@ app.use(express.urlencoded({ extended: true }));
 // Existing routes
 app.use('/api/payments', paymentRoutes);
 app.use('/api/accounts', accountRoutes);
-// app.use('/api/yellowcard', yellowCardRoutes);
-// app.use('/api/invoices', invoiceRoutes);
 app.use('/api/withdrawals', withdrawalRoutes);
 app.use('/api/direct-deposit', directDepositRoutes);
 
@@ -100,7 +98,6 @@ app.use('/api/direct-deposit', directDepositRoutes);
 app.use('/api/v1/balances', balanceRoutes);
 app.use('/api/v1/transactions', transactionRoutes);
 
-// app.use('/api/investments', investmentRoutes)
 
 // Health check
 app.get('/health', (req, res) => {
