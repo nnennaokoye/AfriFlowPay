@@ -35,32 +35,38 @@ const app = express();
 app.use(helmet());
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
-    // Allow all localhost origins during development
-    if (origin.includes('localhost')) {
+
+    // Allow localhost during development
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
       return callback(null, true);
     }
-    
-    // Allow specific origins
+
+    // Allow specific production origins
     const allowedOrigins = [
       process.env.FRONTEND_URL || 'http://localhost:3000',
       'http://localhost:3002',
       'http://127.0.0.1:3000',
-      'http://127.0.0.1:3002'
+      'http://127.0.0.1:3002',
+      'https://afriflowpay-frontend.vercel.app'
     ];
-    
-    if (allowedOrigins.includes(origin)) {
+
+    // Allow Vercel preview deployments (*.vercel.app)
+    const isVercelPreview = /https:\/\/.+\.vercel\.app$/.test(origin);
+
+    if (allowedOrigins.includes(origin) || isVercelPreview) {
       return callback(null, true);
     }
-    
+
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
+
+// Handle preflight quickly
+app.options('*', cors());
 
 // Rate limiting - More lenient for development
 const limiter = rateLimit({
