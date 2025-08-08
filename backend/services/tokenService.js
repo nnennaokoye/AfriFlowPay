@@ -30,7 +30,7 @@ class TokenService {
    */
   async createMockTokens() {
     try {
-      console.log('🪙 Creating mock tokens...');
+      console.log(' Creating mock tokens...');
 
       // Create mock USDC
       const usdcTransaction = new TokenCreateTransaction()
@@ -66,13 +66,13 @@ class TokenService {
       const usdtReceipt = await usdtResponse.getReceipt(this.client);
       this.tokens.USDT = usdtReceipt.tokenId;
 
-      console.log('✅ Mock tokens created:');
-      console.log(`💰 USDC: ${this.tokens.USDC}`);
-      console.log(`💰 USDT: ${this.tokens.USDT}`);
+      console.log(' Mock tokens created:');
+      console.log(` USDC: ${this.tokens.USDC}`);
+      console.log(` USDT: ${this.tokens.USDT}`);
 
       return this.tokens;
     } catch (error) {
-      console.error('❌ Error creating mock tokens:', error);
+      console.error(' Error creating mock tokens:', error);
       throw error;
     }
   }
@@ -82,7 +82,7 @@ class TokenService {
    */
   async associateTokenWithAccount(accountId, tokenId, accountKey) {
     try {
-      console.log(`🔗 Associating token ${tokenId} with account ${accountId}`);
+      console.log(` Associating token ${tokenId} with account ${accountId}`);
 
       const associateTransaction = new TokenAssociateTransaction()
         .setAccountId(accountId)
@@ -93,13 +93,13 @@ class TokenService {
       const response = await signedTransaction.execute(this.client);
       const receipt = await response.getReceipt(this.client);
 
-      console.log(`✅ Token ${tokenId} associated with account ${accountId}`);
+      console.log(` Token ${tokenId} associated with account ${accountId}`);
       return {
         transactionId: response.transactionId.toString(),
         receipt
       };
     } catch (error) {
-      console.error('❌ Error associating token:', error);
+      console.error(' Error associating token:', error);
       throw error;
     }
   }
@@ -109,7 +109,7 @@ class TokenService {
    */
   async transferTokens(fromAccountId, toAccountId, tokenId, amount, fromAccountKey) {
     try {
-      console.log(`💸 Transferring ${amount} tokens from ${fromAccountId} to ${toAccountId}`);
+      console.log(` Transferring ${amount} tokens from ${fromAccountId} to ${toAccountId}`);
 
       // Use TokenTransferTransaction for HTS token transfers
       const transferTransaction = new TokenTransferTransaction()
@@ -121,14 +121,14 @@ class TokenService {
       const response = await signedTransaction.execute(this.client);
       const receipt = await response.getReceipt(this.client);
 
-      console.log(`✅ Transferred ${amount} tokens successfully`);
+      console.log(` Transferred ${amount} tokens successfully`);
       return {
         transactionId: response.transactionId.toString(),
         receipt,
         status: receipt.status.toString()
       };
     } catch (error) {
-      console.error('❌ Error transferring tokens:', error);
+      console.error(' Error transferring tokens:', error);
       throw error;
     }
   }
@@ -138,7 +138,7 @@ class TokenService {
    */
   async getTokenInfo(tokenId) {
     try {
-      console.log(`📋 Querying token info for ${tokenId}`);
+      console.log(` Querying token info for ${tokenId}`);
 
       const tokenInfo = await new TokenInfoQuery()
         .setTokenId(tokenId)
@@ -160,10 +160,10 @@ class TokenService {
         createdTime: tokenInfo.createdTime ? tokenInfo.createdTime.toDate() : null
       };
 
-      console.log(`✅ Token info retrieved for ${tokenInfo.name} (${tokenInfo.symbol})`);
+      console.log(` Token info retrieved for ${tokenInfo.name} (${tokenInfo.symbol})`);
       return info;
     } catch (error) {
-      console.error('❌ Error getting token info:', error);
+      console.error(' Error getting token info:', error);
       throw error;
     }
   }
@@ -173,7 +173,7 @@ class TokenService {
    */
   async getAccountTokenBalances(accountId) {
     try {
-      console.log(`💰 Getting token balances for account ${accountId}`);
+      console.log(` Getting token balances for account ${accountId}`);
 
       const accountBalance = await new AccountBalanceQuery()
         .setAccountId(accountId)
@@ -191,10 +191,10 @@ class TokenService {
         }
       }
 
-      console.log(`✅ Retrieved balances for account ${accountId}`);
+      console.log(` Retrieved balances for account ${accountId}`);
       return balances;
     } catch (error) {
-      console.error('❌ Error getting account token balances:', error);
+      console.error(' Error getting account token balances:', error);
       throw error;
     }
   }
@@ -218,7 +218,7 @@ class TokenService {
         timestamp: new Date().toISOString()
       };
     } catch (error) {
-      console.error('❌ Error getting detailed token balance:', error);
+      console.error(' Error getting detailed token balance:', error);
       throw error;
     }
   }

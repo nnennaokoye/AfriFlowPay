@@ -6,6 +6,8 @@ const {
   AccountId,
   Hbar
 } = require('@hashgraph/sdk');
+const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const hederaClient = require('./hederaClient');
 
 class AccountService {
@@ -16,6 +18,10 @@ class AccountService {
     
     // Store custodial accounts for users
     this.custodialAccounts = new Map();
+    
+    // Password-only authentication storage
+    this.passwordToUserId = new Map(); // hash(password + accountType) -> userId
+    this.userCredentials = new Map();  // userId -> { hashedPassword, accountType }
   }
 
   /**
@@ -151,7 +157,7 @@ class AccountService {
       const response = await signedTransaction.execute(this.client);
       const receipt = await response.getReceipt(this.client);
 
-      console.log(`✅ Transferred ${transferAmount} HBAR from ${fromAccountId} to ${toAccountId}`);
+      console.log(` Transferred ${transferAmount} HBAR from ${fromAccountId} to ${toAccountId}`);
       console.log(`Transaction ID: ${response.transactionId.toString()}`);
       
       return {
@@ -160,7 +166,7 @@ class AccountService {
         status: receipt.status.toString()
       };
     } catch (error) {
-      console.error('❌ Error transferring HBAR:', error);
+      console.error(' Error transferring HBAR:', error);
       throw error;
     }
   }
@@ -192,7 +198,7 @@ class AccountService {
    */
   async transferFunds(fromUserId, toUserId, amount, tokenType = 'HBAR') {
     try {
-      console.log('🔍 Debug transferFunds inputs:');
+      console.log(' Debug transferFunds inputs:');
       console.log('  fromUserId:', fromUserId, typeof fromUserId);
       console.log('  toUserId:', toUserId, typeof toUserId);
       console.log('  amount:', amount, typeof amount);
@@ -201,7 +207,7 @@ class AccountService {
       const fromAccount = this.getCustodialAccount(fromUserId);
       const toAccount = this.getCustodialAccount(toUserId);
       
-      console.log('🔍 Debug account lookup:');
+      console.log(' Debug account lookup:');
       console.log('  fromAccount:', fromAccount ? 'found' : 'not found');
       console.log('  toAccount:', toAccount ? 'found' : 'not found');
       
@@ -212,12 +218,12 @@ class AccountService {
         throw new Error(`No custodial account found for recipient: ${toUserId}`);
       }
       
-      console.log('🔍 Debug account details:');
+      console.log(' Debug account details:');
       console.log('  fromAccount.accountId:', fromAccount.accountId, typeof fromAccount.accountId);
       console.log('  fromAccount.privateKey type:', typeof fromAccount.privateKey);
       console.log('  toAccount.accountId:', toAccount.accountId, typeof toAccount.accountId);
       
-      console.log(`🔄 Transferring ${amount} ${tokenType} from ${fromUserId} to ${toUserId}`);
+      console.log(` Transferring ${amount} ${tokenType} from ${fromUserId} to ${toUserId}`);
       console.log(`From account: ${fromAccount.accountId}`);
       console.log(`To account: ${toAccount.accountId}`);
       
@@ -230,14 +236,14 @@ class AccountService {
           fromAccount.privateKey
         );
         
-        console.log(`✅ Transferred ${amount} HBAR from ${fromUserId} to ${toUserId}`);
+        console.log(` Transferred ${amount} HBAR from ${fromUserId} to ${toUserId}`);
         return result;
       } else {
         // For token transfers, implement token transfer logic here
         throw new Error('Token transfers not yet implemented');
       }
     } catch (error) {
-      console.error('❌ Error transferring funds:', error);
+      console.error(' Error transferring funds:', error);
       throw error;
     }
   }
@@ -249,6 +255,118 @@ class AccountService {
    */
   getAllCustodialAccounts() {
     return Array.from(this.custodialAccounts.values());
+  }
+
+  // ========== PASSWORD-ONLY AUTHENTICATION METHODS ==========
+
+  /**
+   * Generate password key for storage
+   */
+  _generatePasswordKey(password, accountType) {
+    return crypto.createHash('sha256')
+      .update(password + accountType + 'afriPayFlow')
+      .digest('hex');
+  }
+
+  /**
+   * Create account with password-only authentication
+   */
+  async createAccountWithPassword(password, accountType) {
+    try {
+      // Generate unique userId
+      const userId = 'user_' + crypto.randomBytes(16).toString('hex');
+      
+      // Hash password
+      const saltRounds = 10;
+      const hashedPassword = await bcrypt.hash(password, saltRounds);
+      
+      // Generate password key for lookup
+      const passwordKey = this._generatePasswordKey(password, accountType);
+      
+      // Check if password already exists for this account type
+      if (this.passwordToUserId.has(passwordKey)) {
+        throw new Error('An account with this password already exists for this account type');
+      }
+      
+      // Create the custodial account
+      const accountData = await this.createCustodialAccount(userId);
+      
+      // Store password mapping
+      this.passwordToUserId.set(passwordKey, userId);
+      this.userCredentials.set(userId, {
+        hashedPassword,
+        accountType,
+        createdAt: new Date().toISOString()
+      });
+      
+      console.log(`Created account with password authentication - UserId: ${userId}, Type: ${accountType}`);
+      
+      return {
+        userId,
+        accountId: accountData.accountId,
+        accountType,
+        balances: accountData.balances
+      };
+    } catch (error) {
+      console.error('Error creating account with password:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Login with password-only authentication
+   */
+  async loginWithPassword(password, accountType) {
+    try {
+      // Generate password key for lookup
+      const passwordKey = this._generatePasswordKey(password, accountType);
+      
+      // Find userId by password key
+      const userId = this.passwordToUserId.get(passwordKey);
+      if (!userId) {
+        throw new Error('Invalid password or account type');
+      }
+      
+      // Get user credentials
+      const credentials = this.userCredentials.get(userId);
+      if (!credentials) {
+        throw new Error('Account credentials not found');
+      }
+      
+      // Verify password
+      const isValidPassword = await bcrypt.compare(password, credentials.hashedPassword);
+      if (!isValidPassword) {
+        throw new Error('Invalid password');
+      }
+      
+      // Get account data
+      const accountInfo = this.custodialAccounts.get(userId);
+      if (!accountInfo) {
+        throw new Error('Account not found');
+      }
+      
+      // Return account data without balance for now to avoid login errors
+      // Balance can be fetched separately after successful login
+      console.log(`Successful login - UserId: ${userId}, Type: ${accountType}`);
+      
+      return {
+        userId,
+        accountId: accountInfo.accountId,
+        accountType,
+        balances: { hbar: 0, tokens: [] } // Default balance, will be updated after login
+      };
+    } catch (error) {
+      console.error('Error logging in with password:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if password exists for account type
+   */
+  passwordExists(password, accountType) {
+    const passwordKey = this._generatePasswordKey(password, accountType);
+    return this.passwordToUserId.has(passwordKey);
   }
 }
 

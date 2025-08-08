@@ -1,6 +1,19 @@
 const accountService = require('../services/accountService');
+const logger = require('../utils/logger');
+const ValidationUtils = require('../utils/validation');
+const ResponseUtils = require('../utils/response');
+const crypto = require('crypto');
 
 class DirectDepositController {
+  constructor() {
+    this.depositRequests = new Map(); 
+  
+    this.initiateDeposit = this.initiateDeposit.bind(this);
+    this.getDepositStatus = this.getDepositStatus.bind(this);
+    this.getDepositHistory = this.getDepositHistory.bind(this);
+    this.completeDeposit = this.completeDeposit.bind(this);
+  }
+
   /**
    * Initiate direct deposit funding
    */
@@ -9,32 +22,46 @@ class DirectDepositController {
       const { userId, amount, tokenType = 'HBAR', bankDetails } = req.body;
 
       // Validate required fields
-      if (!userId || !amount || !bankDetails) {
-        return res.status(400).json({
-          success: false,
-          message: 'Missing required fields: userId, amount, bankDetails'
-        });
+      const validationErrors = [];
+      if (!userId) validationErrors.push('userId is required');
+      if (!amount) validationErrors.push('amount is required');
+      if (!bankDetails) validationErrors.push('bankDetails is required');
+      
+      if (validationErrors.length > 0) {
+        return ResponseUtils.validationError(res, validationErrors);
+      }
+
+      // Validate userId format
+      if (!ValidationUtils.isValidUserId(userId)) {
+        return ResponseUtils.validationError(res, ['Invalid userId format']);
       }
 
       // Validate amount
-      if (amount <= 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Amount must be greater than 0'
-        });
+      const depositAmount = parseFloat(amount);
+      if (isNaN(depositAmount) || depositAmount <= 0) {
+        return ResponseUtils.validationError(res, ['Amount must be a positive number']);
       }
 
       // Get or create user's custodial account
       let userAccount = accountService.getCustodialAccount(userId);
       if (!userAccount) {
-        userAccount = await accountService.createCustodialAccount(userId);
+        try {
+          userAccount = await accountService.createCustodialAccount(userId);
+          logger.info(`Created custodial account for direct deposit: ${userId}`);
+        } catch (error) {
+          logger.error('Error creating custodial account for direct deposit:', error);
+          return ResponseUtils.error(res, 'Failed to create user account', 500, error.message);
+        }
       }
+
+      // Generate deposit ID
+      const depositId = crypto.randomBytes(16).toString('hex');
 
       // For demo purposes, simulate direct deposit processing
       const depositRequest = {
-        id: `deposit-${Date.now()}`,
+        id: depositId,
         userId,
-        amount,
+        amount: depositAmount,
         tokenType,
         bankDetails: {
           accountNumber: bankDetails.accountNumber,
@@ -46,32 +73,22 @@ class DirectDepositController {
         estimatedCompletion: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString() // 2 days
       };
 
-      // Store deposit request (in-memory for demo)
-      if (!global.depositRequests) {
-        global.depositRequests = new Map();
-      }
-      global.depositRequests.set(depositRequest.id, depositRequest);
+      // Store deposit request
+      this.depositRequests.set(depositId, depositRequest);
+      logger.info(`Direct deposit initiated: ${depositId} for user ${userId}`);
 
-      console.log('Direct deposit initiated:', depositRequest);
-
-      res.json({
-        success: true,
-        data: {
-          depositId: depositRequest.id,
-          status: depositRequest.status,
-          amount: depositRequest.amount,
-          tokenType: depositRequest.tokenType,
-          estimatedCompletion: depositRequest.estimatedCompletion,
-          message: 'Direct deposit initiated successfully'
-        }
-      });
+      return ResponseUtils.success(res, {
+        depositId: depositRequest.id,
+        status: depositRequest.status,
+        amount: depositRequest.amount,
+        tokenType: depositRequest.tokenType,
+        estimatedCompletion: depositRequest.estimatedCompletion,
+        message: 'Direct deposit initiated successfully'
+      }, 'Direct deposit initiated successfully', 201);
 
     } catch (error) {
-      console.error('Error initiating direct deposit:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
+      logger.error('Error initiating direct deposit:', error);
+      return ResponseUtils.error(res, 'Failed to initiate direct deposit', 500, error.message);
     }
   }
 
@@ -82,19 +99,15 @@ class DirectDepositController {
     try {
       const { depositId } = req.params;
 
-      if (!global.depositRequests) {
-        return res.status(404).json({
-          success: false,
-          message: 'Deposit request not found'
-        });
+      if (!depositId) {
+        return ResponseUtils.validationError(res, ['Deposit ID is required']);
       }
 
-      const depositRequest = global.depositRequests.get(depositId);
+      logger.info(`Retrieving deposit status: ${depositId}`);
+      const depositRequest = this.depositRequests.get(depositId);
       if (!depositRequest) {
-        return res.status(404).json({
-          success: false,
-          message: 'Deposit request not found'
-        });
+        logger.warn(`Deposit request not found: ${depositId}`);
+        return ResponseUtils.notFound(res, 'Deposit request');
       }
 
       // For demo purposes, simulate status progression
@@ -106,19 +119,14 @@ class DirectDepositController {
       if (timeDiff > oneHour && depositRequest.status === 'pending') {
         depositRequest.status = 'processing';
         depositRequest.updatedAt = now.toISOString();
+        logger.info(`Deposit status updated to processing: ${depositId}`);
       }
 
-      res.json({
-        success: true,
-        data: depositRequest
-      });
+      return ResponseUtils.success(res, depositRequest, 'Deposit status retrieved successfully');
 
     } catch (error) {
-      console.error('Error getting deposit status:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
+      logger.error('Error getting deposit status:', error);
+      return ResponseUtils.error(res, 'Failed to get deposit status', 500, error.message);
     }
   }
 
@@ -129,29 +137,26 @@ class DirectDepositController {
     try {
       const { userId } = req.params;
 
-      if (!global.depositRequests) {
-        return res.json({
-          success: true,
-          data: []
-        });
+      // Validate userId
+      if (!ValidationUtils.isValidUserId(userId)) {
+        return ResponseUtils.validationError(res, ['Invalid userId format']);
       }
 
-      const userDeposits = Array.from(global.depositRequests.values())
+      logger.info(`Retrieving deposit history for user: ${userId}`);
+
+      const userDeposits = Array.from(this.depositRequests.values())
         .filter(deposit => deposit.userId === userId)
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-      res.json({
-        success: true,
-        data: userDeposits,
-        message: 'Deposit history retrieved successfully'
-      });
+      return ResponseUtils.success(res, {
+        userId,
+        deposits: userDeposits,
+        total: userDeposits.length
+      }, 'Deposit history retrieved successfully');
 
     } catch (error) {
-      console.error('Error getting deposit history:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
+      logger.error('Error getting deposit history:', error);
+      return ResponseUtils.error(res, 'Failed to get deposit history', 500, error.message);
     }
   }
 
@@ -162,19 +167,15 @@ class DirectDepositController {
     try {
       const { depositId } = req.params;
 
-      if (!global.depositRequests) {
-        return res.status(404).json({
-          success: false,
-          message: 'Deposit request not found'
-        });
+      if (!depositId) {
+        return ResponseUtils.validationError(res, ['Deposit ID is required']);
       }
 
-      const depositRequest = global.depositRequests.get(depositId);
+      logger.info(`Completing deposit: ${depositId}`);
+      const depositRequest = this.depositRequests.get(depositId);
       if (!depositRequest) {
-        return res.status(404).json({
-          success: false,
-          message: 'Deposit request not found'
-        });
+        logger.warn(`Deposit request not found for completion: ${depositId}`);
+        return ResponseUtils.notFound(res, 'Deposit request');
       }
 
       // Update deposit status
@@ -182,20 +183,13 @@ class DirectDepositController {
       depositRequest.completedAt = new Date().toISOString();
       depositRequest.transactionId = `hbar-deposit-${Date.now()}`;
 
-      console.log('Direct deposit completed:', depositRequest);
+      logger.info(`Direct deposit completed: ${depositId}`, { transactionId: depositRequest.transactionId });
 
-      res.json({
-        success: true,
-        data: depositRequest,
-        message: 'Direct deposit completed successfully'
-      });
+      return ResponseUtils.success(res, depositRequest, 'Direct deposit completed successfully');
 
     } catch (error) {
-      console.error('Error completing deposit:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
+      logger.error('Error completing deposit:', error);
+      return ResponseUtils.error(res, 'Failed to complete deposit', 500, error.message);
     }
   }
 }

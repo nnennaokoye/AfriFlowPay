@@ -30,7 +30,7 @@ class TransactionController {
         });
       }
 
-      console.log(`📜 Getting transactions for account: ${accountId}`);
+      console.log(` Getting transactions for account: ${accountId}`);
 
       // Get transaction history from mirror node
       const transactions = await mirrorNodeService.getTransactionHistory(
@@ -64,7 +64,7 @@ class TransactionController {
       });
 
     } catch (error) {
-      console.error('❌ Error getting account transactions:', error);
+      console.error(' Error getting account transactions:', error);
       
       const errorResponse = this.getErrorResponse(error);
       res.status(errorResponse.statusCode).json({
@@ -113,7 +113,7 @@ class TransactionController {
         });
       }
 
-      console.log(`📜 Getting custodial transactions for user: ${userId} (${custodialAccount.accountId})`);
+      console.log(`Getting custodial transactions for user: ${userId} (${custodialAccount.accountId})`);
 
       // Get transaction history for the custodial account
       const transactions = await mirrorNodeService.getTransactionHistory(
@@ -151,7 +151,7 @@ class TransactionController {
       });
 
     } catch (error) {
-      console.error('❌ Error getting custodial account transactions:', error);
+      console.error(' Error getting custodial account transactions:', error);
       
       const errorResponse = this.getErrorResponse(error);
       res.status(errorResponse.statusCode).json({
@@ -179,7 +179,7 @@ class TransactionController {
         });
       }
 
-      console.log(`🔍 Getting transaction details for: ${transactionId}`);
+      console.log(` Getting transaction details for: ${transactionId}`);
 
       // Get transaction details from mirror node
       const transactionDetails = await mirrorNodeService.getTransactionDetails(transactionId);
@@ -202,7 +202,7 @@ class TransactionController {
       });
 
     } catch (error) {
-      console.error('❌ Error getting transaction details:', error);
+      console.error(' Error getting transaction details:', error);
       
       const errorResponse = this.getErrorResponse(error);
       res.status(errorResponse.statusCode).json({
@@ -229,7 +229,7 @@ class TransactionController {
         toDate 
       } = req.query;
 
-      console.log('📜 Getting payment system transactions...');
+      console.log(' Getting payment system transactions...');
 
       // Get payment service instance to access pending payments
       const paymentService = require('../services/paymentService');
@@ -305,7 +305,7 @@ class TransactionController {
       });
 
     } catch (error) {
-      console.error('❌ Error getting payment transactions:', error);
+      console.error(' Error getting payment transactions:', error);
       
       const errorResponse = this.getErrorResponse(error);
       res.status(errorResponse.statusCode).json({
@@ -325,7 +325,7 @@ class TransactionController {
     try {
       const { accountId, userId, period = '24h' } = req.query;
 
-      console.log('📊 Getting transaction statistics...');
+      console.log(' Getting transaction statistics...');
 
       let stats = {
         period,
@@ -389,7 +389,7 @@ class TransactionController {
       });
 
     } catch (error) {
-      console.error('❌ Error getting transaction stats:', error);
+      console.error(' Error getting transaction stats:', error);
       
       const errorResponse = this.getErrorResponse(error);
       res.status(errorResponse.statusCode).json({

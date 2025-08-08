@@ -9,8 +9,7 @@ require('dotenv').config();
 // Import routes
 const paymentRoutes = require('./routes/payment');
 const accountRoutes = require('./routes/account');
-const yellowCardRoutes = require('./routes/yellowcard');
-const invoiceRoutes = require('./routes/invoice');
+// Removed yellowcard and invoice modules
 const withdrawalRoutes = require('./routes/withdrawal');
 const directDepositRoutes = require('./routes/directDeposit');
 
@@ -18,11 +17,16 @@ const directDepositRoutes = require('./routes/directDeposit');
 const balanceRoutes = require('./routes/balance');
 const transactionRoutes = require('./routes/transaction');
 
-const investmentRoutes = require('./routes/investment');
+// Removed investment routes
 
 // Import services for initialization
 const tokenService = require('./services/tokenService');
 const accountService = require('./services/accountService');
+const logger = require('./utils/logger');
+
+// Import middleware
+const SecurityMiddleware = require('./middleware/security');
+const rateLimiters = require('./middleware/rateLimiting');
 
 
 const app = express();
@@ -58,24 +62,31 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
-// Rate limiting
+// Rate limiting - More lenient for development
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  max: 1000 // limit each IP to 1000 requests per windowMs 
 });
 app.use('/api/', limiter);
+
+// Security middleware
+app.use(SecurityMiddleware.addSecurityHeaders);
+app.use(SecurityMiddleware.validateRequestSize);
+app.use(SecurityMiddleware.validateContentType);
+app.use(SecurityMiddleware.sanitizeRequest);
+app.use(SecurityMiddleware.logRequest);
 
 // General middleware
 app.use(compression());
 app.use(morgan('combined'));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '1mb' })); 
 app.use(express.urlencoded({ extended: true }));
 
 // Existing routes
 app.use('/api/payments', paymentRoutes);
 app.use('/api/accounts', accountRoutes);
-app.use('/api/yellowcard', yellowCardRoutes);
-app.use('/api/invoices', invoiceRoutes);
+// app.use('/api/yellowcard', yellowCardRoutes);
+// app.use('/api/invoices', invoiceRoutes);
 app.use('/api/withdrawals', withdrawalRoutes);
 app.use('/api/direct-deposit', directDepositRoutes);
 
@@ -83,7 +94,7 @@ app.use('/api/direct-deposit', directDepositRoutes);
 app.use('/api/v1/balances', balanceRoutes);
 app.use('/api/v1/transactions', transactionRoutes);
 
-app.use('/api/investments', investmentRoutes)
+// app.use('/api/investments', investmentRoutes)
 
 // Health check
 app.get('/health', (req, res) => {
@@ -95,7 +106,7 @@ app.get('/health', (req, res) => {
     features: {
       hederaIntegration: true,
       custodialAccounts: true,
-      tokenSupport: tokenService.areTokensCreated(),
+       tokenSupport: false,
       balanceAPI: true,
       transactionAPI: true
     }
@@ -128,14 +139,11 @@ app.get('/api', (req, res) => {
         'POST /api/payments/generate-qr': 'Generate payment QR code',
         'POST /api/payments/process': 'Process payment transaction',
         'GET /api/payments/status/:nonce': 'Get payment status',
-        'POST /api/payments/validate': 'Validate payment request'
+        'POST /api/payments/validate': 'Validate payment request',
+        'GET /api/payments/history': 'List merchant payment requests (QR links)',
+        'POST /api/payments/cancel/:nonce': 'Cancel a payment request'
       },
-      invoices: {
-        'POST /api/invoices/create': 'Create and tokenize invoice on Hedera',
-        'GET /api/invoices/:invoiceId': 'Get invoice details with token info',
-        'GET /api/invoices/merchant/:merchantId': 'Get merchant invoices',
-        'GET /api/invoices/investments/opportunities': 'Get investment opportunities'
-      },
+      // invoices removed
       
       balances: {
         'GET /api/v1/balances/:accountId': 'Get account HBAR and token balances',
@@ -150,12 +158,7 @@ app.get('/api', (req, res) => {
         'GET /api/v1/transactions/payments/history': 'Get payment system transaction history',
         'GET /api/v1/transactions/stats/overview': 'Get transaction statistics'
       },
-      yellowcard: {
-        'GET /api/yellowcard/countries': 'Get supported countries',
-        'GET /api/yellowcard/payment-methods/:countryCode': 'Get payment methods',
-        'POST /api/yellowcard/purchase': 'Purchase crypto',
-        'GET /api/yellowcard/history/:userId': 'Get purchase history'
-      }
+      // yellowcard removed
     },
     hederaFeatures: {
       tokenCreateTransaction: 'Creates mock USDC/USDT and invoice NFTs',
@@ -190,50 +193,47 @@ app.use('*', (req, res) => {
 // Initialize services and start server
 async function startServer() {
   try {
-    console.log('Starting AfriPayFlow backend server...');
+    logger.info('Starting AfriPayFlow backend server...');
     
     // Initialize mock tokens
-    console.log('Initializing Hedera services...');
+    logger.info('Initializing Hedera services...');
     try {
       await tokenService.createMockTokens();
-      console.log('Mock tokens (USDC/USDT) created successfully');
+      logger.info('Mock tokens (USDC/USDT) created successfully');
     } catch (error) {
-      console.warn('Failed to create mock tokens:', error.message);
+      logger.warn('Failed to create mock tokens:', error.message);
     }
     
     // Create initial custodial accounts for testing
-    console.log('Creating initial custodial accounts...');
+    logger.info('Creating initial custodial accounts...');
     
     // Create merchant account
     try {
       const merchantAccount = await accountService.createCustodialAccount('test_merchant');
-      console.log(`Created merchant custodial account: ${merchantAccount.accountId}`);
+      logger.info(`Created merchant custodial account: ${merchantAccount.accountId}`);
     } catch (error) {
-      console.warn('Failed to create merchant custodial account:', error.message);
+      logger.warn('Failed to create merchant custodial account:', error.message);
     }
     
     // Create customer account
     try {
       const customerAccount = await accountService.createCustodialAccount('test_customer');
-      console.log(`Created customer custodial account: ${customerAccount.accountId}`);
+      logger.info(`Created customer custodial account: ${customerAccount.accountId}`);
     } catch (error) {
-      console.warn('Failed to create customer custodial account:', error.message);
+      logger.warn('Failed to create customer custodial account:', error.message);
     }
     
-    const PORT = process.env.PORT || 3001;
-    app.listen(PORT, () => {
-      console.log('AfriPayFlow server running successfully!');
-      console.log(`Server: http://localhost:${PORT}`);
-      console.log(`API Docs: http://localhost:${PORT}/api`);
-      console.log(`Health Check: http://localhost:${PORT}/health`);
-      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log('');
-      console.log('NEW Endpoints Available:');
-      console.log(`   Balances API: http://localhost:${PORT}/api/v1/balances/`);
-      console.log(`   Transactions API: http://localhost:${PORT}/api/v1/transactions/`);
-      console.log('');
-      console.log('All Hedera features initialized and ready!');
-    });
+    // For local development
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => {
+    console.log('AfriPayFlow server running successfully!');
+    console.log(`Server: http://localhost:${PORT}`);
+    console.log(`API Docs: http://localhost:${PORT}/api`);
+    console.log(`Health Check: http://localhost:${PORT}/health`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  });
+}
   } catch (error) {
     console.error('Failed to start AfriPayFlow server:', error);
     process.exit(1);

@@ -25,7 +25,7 @@ class BalanceController {
         });
       }
 
-      console.log(`💰 Getting balances for account: ${accountId}`);
+      console.log(` Getting balances for account: ${accountId}`);
 
       // Get account balances using token service
       const balances = await tokenService.getAccountTokenBalances(accountId);
@@ -66,7 +66,7 @@ class BalanceController {
       });
 
     } catch (error) {
-      console.error('❌ Error getting account balances:', error);
+      console.error(' Error getting account balances:', error);
       
       const errorResponse = this.getErrorResponse(error);
       res.status(errorResponse.statusCode).json({
@@ -109,7 +109,7 @@ class BalanceController {
         });
       }
 
-      console.log(`💰 Getting custodial balances for user: ${userId} (${custodialAccount.accountId})`);
+      console.log(` Getting custodial balances for user: ${userId} (${custodialAccount.accountId})`);
 
       // Get balances for the custodial account
       const balances = await tokenService.getAccountTokenBalances(custodialAccount.accountId);
@@ -153,7 +153,7 @@ class BalanceController {
       });
 
     } catch (error) {
-      console.error('❌ Error getting custodial account balances:', error);
+      console.error(' Error getting custodial account balances:', error);
       
       const errorResponse = this.getErrorResponse(error);
       res.status(errorResponse.statusCode).json({
@@ -181,7 +181,7 @@ class BalanceController {
         });
       }
 
-      console.log(`📋 Getting token info for: ${tokenId}`);
+      console.log(` Getting token info for: ${tokenId}`);
 
       const tokenInfo = await tokenService.getTokenInfo(tokenId);
 
@@ -191,7 +191,7 @@ class BalanceController {
       });
 
     } catch (error) {
-      console.error('❌ Error getting token info:', error);
+      console.error(' Error getting token info:', error);
       
       const errorResponse = this.getErrorResponse(error);
       res.status(errorResponse.statusCode).json({
@@ -243,7 +243,7 @@ class BalanceController {
       });
 
     } catch (error) {
-      console.error('❌ Error getting tokens overview:', error);
+      console.error(' Error getting tokens overview:', error);
       
       const errorResponse = this.getErrorResponse(error);
       res.status(errorResponse.statusCode).json({

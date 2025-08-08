@@ -1,5 +1,8 @@
 const accountService = require('../services/accountService');
 const mirrorNodeService = require('../services/mirrorNodeService');
+const logger = require('../utils/logger');
+const ValidationUtils = require('../utils/validation');
+const ResponseUtils = require('../utils/response');
 
 class AccountController {
   /**
@@ -8,33 +11,41 @@ class AccountController {
   async createAccount(req, res) {
     try {
       const { userId } = req.body;
-      const userIdToUse = userId || `user_${Date.now()}`; // Generate userId if not provided
       
-      console.log(`Creating new custodial account for user: ${userIdToUse}`);
+      // Validate or generate userId
+      let userIdToUse;
+      if (userId) {
+        if (!ValidationUtils.isValidUserId(userId)) {
+          return ResponseUtils.validationError(res, ['Invalid userId format']);
+        }
+        userIdToUse = ValidationUtils.sanitizeInput(userId);
+      } else {
+        userIdToUse = `user_${Date.now()}`; // Generate userId if not provided
+      }
+      
+      // Check if account already exists
+      const existingAccount = accountService.getCustodialAccount(userIdToUse);
+      if (existingAccount) {
+        logger.warn(`Custodial account already exists for user: ${userIdToUse}`);
+        return ResponseUtils.error(res, 'Account already exists for this user', 409);
+      }
+      
+      logger.info(`Creating new custodial account for user: ${userIdToUse}`);
       const account = await accountService.createCustodialAccount(userIdToUse);
       
-      console.log(`Created custodial account: ${account.accountId}`);
+      logger.info(`Created custodial account: ${account.accountId} for user: ${userIdToUse}`);
       
-    
-      res.json({
-        success: true,
-        data: {
-          userId: userIdToUse,
-          accountId: account.accountId,
-          publicKey: account.publicKey,
-          createdAt: account.createdAt,
-          initialBalance: "5 HBAR", // New accounts get 5 HBAR
-          network: "Hedera Testnet"
-        },
-        message: "Custodial account created successfully"
-      });
+      return ResponseUtils.success(res, {
+        userId: userIdToUse,
+        accountId: account.accountId,
+        createdAt: account.createdAt,
+        initialBalance: "1 HBAR", // Initial balance from account creation
+        network: "Hedera Testnet"
+      }, "Custodial account created successfully", 201);
+      
     } catch (error) {
-      console.error('Error creating account:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to create account',
-        error: error.message
-      });
+      logger.error('Error creating account:', error);
+      return ResponseUtils.error(res, 'Failed to create account', 500, error.message);
     }
   }
 
@@ -46,28 +57,24 @@ class AccountController {
       const { walletAddress } = req.params;
 
       // Validate wallet address format
-      if (!walletAddress || !walletAddress.match(/^0\.0\.\d+$/)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid wallet address format. Expected format: 0.0.123456'
-        });
+      if (!ValidationUtils.isValidAccountId(walletAddress)) {
+        return ResponseUtils.validationError(res, ['Invalid wallet address format. Expected format: 0.0.123456']);
       }
 
-      console.log(`Getting balance for wallet: ${walletAddress}`);
+      logger.info(`Getting balance for wallet: ${walletAddress}`);
       const balance = await accountService.getAccountBalance(walletAddress);
 
-      res.json({
-        success: true,
-        data: balance
-      });
+      if (!balance) {
+        logger.warn(`No balance data found for wallet: ${walletAddress}`);
+        return ResponseUtils.notFound(res, 'Account balance');
+      }
+
+      logger.info(`Balance retrieved successfully for wallet: ${walletAddress}`);
+      return ResponseUtils.success(res, balance, 'Balance retrieved successfully');
 
     } catch (error) {
-      console.error('Error getting balance:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to get balance',
-        error: error.message
-      });
+      logger.error('Error getting balance:', error);
+      return ResponseUtils.error(res, 'Failed to get balance', 500, error.message);
     }
   }
 
@@ -80,40 +87,53 @@ class AccountController {
       const { limit = 50, order = 'desc' } = req.query;
 
       // Validate wallet address format
-      if (!walletAddress || !walletAddress.match(/^0\.0\.\d+$/)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid wallet address format. Expected format: 0.0.123456'
-        });
+      if (!ValidationUtils.isValidAccountId(walletAddress)) {
+        return ResponseUtils.validationError(res, ['Invalid wallet address format. Expected format: 0.0.123456']);
       }
 
-      console.log(`Getting transaction history for wallet: ${walletAddress}`);
+      // Validate query parameters
+      const parsedLimit = parseInt(limit);
+      if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+        return ResponseUtils.validationError(res, ['Limit must be between 1 and 100']);
+      }
+
+      if (!['asc', 'desc'].includes(order.toLowerCase())) {
+        return ResponseUtils.validationError(res, ['Order must be either "asc" or "desc"']);
+      }
+
+      logger.info(`Getting transaction history for wallet: ${walletAddress}, limit: ${parsedLimit}, order: ${order}`);
       const history = await mirrorNodeService.getTransactionHistory(
         walletAddress,
-        parseInt(limit),
-        order
+        parsedLimit,
+        order.toLowerCase()
       );
 
-      res.json({
-        success: true,
-        data: history
-      });
+      if (!history || (Array.isArray(history) && history.length === 0)) {
+        logger.info(`No transaction history found for wallet: ${walletAddress}`);
+        return ResponseUtils.success(res, [], 'No transactions found for this wallet');
+      }
+
+      logger.info(`Retrieved ${Array.isArray(history) ? history.length : 'transaction'} history for wallet: ${walletAddress}`);
+      return ResponseUtils.success(res, history, 'Transaction history retrieved successfully');
 
     } catch (error) {
-      console.error('Error getting transaction history:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to get transaction history',
-        error: error.message
-      });
+      logger.error('Error getting transaction history:', error);
+      return ResponseUtils.error(res, 'Failed to get transaction history', 500, error.message);
     }
   }
 
   /**
-   * Debug: List all custodial accounts ()
+   * Debug: List all custodial accounts (for development/testing only)
    */
   async listCustodialAccounts(req, res) {
     try {
+      // Security check: Only allow in development environment
+      if (process.env.NODE_ENV === 'production') {
+        logger.warn('Attempted to access debug endpoint in production');
+        return ResponseUtils.forbidden(res, 'Debug endpoints not available in production');
+      }
+
+      logger.info('Listing all custodial accounts (debug endpoint)');
       const accounts = accountService.getAllCustodialAccounts();
       
       // SECURE: Filter out any sensitive data
@@ -124,23 +144,20 @@ class AccountController {
           userId: account.userId || userId,
           accountId: account.accountId,
           createdAt: account.createdAt,
-          
+          network: "Hedera Testnet"
         };
       });
       
-      res.json({
-        success: true,
-        data: safeAccounts,
+      logger.info(`Listed ${Object.keys(safeAccounts).length} custodial accounts`);
+      return ResponseUtils.success(res, {
+        accounts: safeAccounts,
         count: Object.keys(safeAccounts).length,
         network: "Hedera Testnet"
-      });
+      }, 'Custodial accounts retrieved successfully');
+      
     } catch (error) {
-      console.error('Error listing custodial accounts:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to list custodial accounts',
-        error: error.message
-      });
+      logger.error('Error listing custodial accounts:', error);
+      return ResponseUtils.error(res, 'Failed to list custodial accounts', 500, error.message);
     }
   }
 
@@ -151,31 +168,37 @@ class AccountController {
     try {
       const { userId } = req.params;
       
+      // Validate userId
+      if (!ValidationUtils.isValidUserId(userId)) {
+        return ResponseUtils.validationError(res, ['Invalid userId format']);
+      }
+      
+      logger.info(`Getting custodial account balance for userId: ${userId}`);
       const custodialAccount = accountService.getCustodialAccount(userId);
       if (!custodialAccount) {
-        return res.status(404).json({
-          success: false,
-          message: `Custodial account not found for userId: ${userId}`
-        });
+        logger.warn(`Custodial account not found for userId: ${userId}`);
+        return ResponseUtils.notFound(res, 'Custodial account');
       }
       
       const balance = await accountService.getBalance(userId);
-      res.json({
-        success: true,
-        data: {
-          userId,
-          accountId: custodialAccount.accountId,
-          balance,
-          timestamp: new Date().toISOString()
-        }
-      });
+      
+      if (!balance) {
+        logger.warn(`No balance data found for custodial account: ${userId}`);
+        return ResponseUtils.notFound(res, 'Balance data');
+      }
+      
+      logger.info(`Retrieved balance for custodial account: ${userId}`);
+      return ResponseUtils.success(res, {
+        userId,
+        accountId: custodialAccount.accountId,
+        balance,
+        timestamp: new Date().toISOString(),
+        network: "Hedera Testnet"
+      }, 'Custodial account balance retrieved successfully');
+      
     } catch (error) {
-      console.error('Error getting custodial balance:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to get custodial account balance',
-        error: error.message
-      });
+      logger.error('Error getting custodial balance:', error);
+      return ResponseUtils.error(res, 'Failed to get custodial account balance', 500, error.message);
     }
   }
 
@@ -187,41 +210,63 @@ class AccountController {
       const { userId } = req.params;
       const { limit = 50, order = 'desc' } = req.query;
       
+      // Validate userId
+      if (!ValidationUtils.isValidUserId(userId)) {
+        return ResponseUtils.validationError(res, ['Invalid userId format']);
+      }
+
       const custodialAccount = accountService.getCustodialAccount(userId);
       if (!custodialAccount) {
-        return res.status(404).json({
-          success: false,
-          message: `Custodial account not found for userId: ${userId}`
-        });
+        logger.warn(`Custodial account not found for userId: ${userId}`);
+        return ResponseUtils.notFound(res, 'Custodial account');
       }
       
-      console.log(`Getting transaction history for custodial account: ${custodialAccount.accountId}`);
+      // Validate query parameters
+      const parsedLimit = parseInt(limit);
+      if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+        return ResponseUtils.validationError(res, ['Limit must be between 1 and 100']);
+      }
+
+      if (!['asc', 'desc'].includes(order.toLowerCase())) {
+        return ResponseUtils.validationError(res, ['Order must be either "asc" or "desc"']);
+      }
+      
+      logger.info(`Getting transaction history for custodial account: ${custodialAccount.accountId}`);
       const history = await mirrorNodeService.getTransactionHistory(
         custodialAccount.accountId,
-        parseInt(limit),
-        order
+        parsedLimit,
+        order.toLowerCase()
       );
       
-      res.json({
-        success: true,
-        data: {
+      if (!history || (Array.isArray(history) && history.length === 0)) {
+        logger.info(`No transaction history found for custodial account: ${userId}`);
+        return ResponseUtils.success(res, {
           userId,
           accountId: custodialAccount.accountId,
-          transactions: history,
+          transactions: [],
           pagination: {
-            limit: parseInt(limit),
-            order,
-            count: history.length
+            limit: parsedLimit,
+            order: order.toLowerCase(),
+            count: 0
           }
+        }, 'No transactions found for this custodial account');
+      }
+      
+      logger.info(`Retrieved ${Array.isArray(history) ? history.length : 'transaction'} history for custodial account: ${userId}`);
+      return ResponseUtils.success(res, {
+        userId,
+        accountId: custodialAccount.accountId,
+        transactions: history,
+        pagination: {
+          limit: parsedLimit,
+          order: order.toLowerCase(),
+          count: Array.isArray(history) ? history.length : 1
         }
-      });
+      }, 'Transaction history retrieved successfully');
+      
     } catch (error) {
-      console.error('Error getting custodial transaction history:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to get custodial account transaction history',
-        error: error.message
-      });
+      logger.error('Error getting custodial transaction history:', error);
+      return ResponseUtils.error(res, 'Failed to get custodial account transaction history', 500, error.message);
     }
   }
 
@@ -269,56 +314,96 @@ class AccountController {
     }
   }
 
+  
+
+  // ========== PASSWORD-ONLY AUTHENTICATION ENDPOINTS ==========
+
   /**
-   * DEVELOPMENT ONLY: Get account keys for debugging
-   * This would be removed completely in production
-   * Only accessible with special debug header
+   * Create account with password-only authentication
    */
-  async getAccountKeysDebug(req, res) {
+  async createAccountWithPassword(req, res) {
     try {
-      // Only allow in development mode with special header
-      const debugHeader = req.headers['x-debug-mode'];
-      if (debugHeader !== 'development-only') {
-        return res.status(403).json({
-          success: false,
-          message: 'Debug endpoint not available'
-        });
-      }
-
-      const { userId } = req.params;
-      const custodialAccount = accountService.getCustodialAccount(userId);
+      const { password, accountType } = req.body;
       
-      if (!custodialAccount) {
-        return res.status(404).json({
-          success: false,
-          message: `Custodial account not found for userId: ${userId}`
-        });
+      // Validate input
+      if (!password || typeof password !== 'string' || password.length < 6) {
+        return ResponseUtils.validationError(res, ['Password must be at least 6 characters long']);
       }
-
-      // Only log to console, never return in response
-      console.log(`🔐 DEBUG - Account keys for ${userId}:`);
-      console.log(`   Public Key: ${custodialAccount.publicKey}`);
-      console.log(`   Private Key: ${custodialAccount.privateKey}`);
-      console.log(`   Account ID: ${custodialAccount.accountId}`);
-
-      res.json({
-        success: true,
-        data: {
-          message: "Account keys logged to console",
-          userId,
-          accountId: custodialAccount.accountId,
-          publicKey: custodialAccount.publicKey
-          // privateKey: Still never returned, only logged
-        }
-      });
-
+      
+      if (!accountType || !['customer', 'merchant'].includes(accountType)) {
+        return ResponseUtils.validationError(res, ['Account type must be either "customer" or "merchant"']);
+      }
+      
+      // Check if password already exists for this account type
+      if (accountService.passwordExists(password, accountType)) {
+        return ResponseUtils.error(res, 'An account with this password already exists for this account type', 409);
+      }
+      
+      logger.info(`Creating account with password authentication - Type: ${accountType}`);
+      const accountData = await accountService.createAccountWithPassword(password, accountType);
+      
+      logger.info(`Account created successfully - UserId: ${accountData.userId}, Type: ${accountType}`);
+      return ResponseUtils.success(res, {
+        userId: accountData.userId,
+        accountId: accountData.accountId,
+        accountType: accountData.accountType,
+        network: "Hedera Testnet"
+      }, 'Account created successfully');
+      
     } catch (error) {
-      console.error('Error in debug endpoint:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Debug endpoint error',
-        error: error.message
-      });
+      logger.error('Error creating account with password:', error);
+      return ResponseUtils.error(res, 'Failed to create account', 500, error.message);
+    }
+  }
+
+  /**
+   * Login with password-only authentication
+   */
+  async loginWithPassword(req, res) {
+    try {
+      const { password, accountType } = req.body;
+      
+      // Validate input
+      if (!password || typeof password !== 'string') {
+        return ResponseUtils.validationError(res, ['Password is required']);
+      }
+      
+      if (!accountType || !['customer', 'merchant'].includes(accountType)) {
+        return ResponseUtils.validationError(res, ['Account type must be either "customer" or "merchant"']);
+      }
+      
+      logger.info(`Login attempt - Type: ${accountType}`);
+      const accountData = await accountService.loginWithPassword(password, accountType);
+      
+      // Get the current balance after successful login
+      let currentBalance;
+      try {
+        // Use the correct method name: getBalance (not getCustodialBalance)
+        currentBalance = await accountService.getBalance(accountData.userId);
+      } catch (balanceError) {
+        logger.warn('Could not fetch balance during login:', balanceError.message);
+        // Fallback to default balance if balance fetch fails
+        currentBalance = { hbar: 0, tokens: [] };
+      }
+      
+      logger.info(`Login successful - UserId: ${accountData.userId}, Type: ${accountType}`);
+      return ResponseUtils.success(res, {
+        userId: accountData.userId,
+        accountId: accountData.accountId,
+        accountType: accountData.accountType,
+        balances: currentBalance, // Use the fetched balance
+        network: "Hedera Testnet"
+      }, 'Login successful');
+      
+    } catch (error) {
+      logger.error('Error logging in with password:', error);
+      
+      // Return generic error message for security
+      if (error.message.includes('Invalid password') || error.message.includes('not found')) {
+        return ResponseUtils.error(res, 'Invalid password or account type', 401);
+      }
+      
+      return ResponseUtils.error(res, 'Login failed', 500, error.message);
     }
   }
 }

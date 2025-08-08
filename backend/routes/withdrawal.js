@@ -1,14 +1,22 @@
 const express = require('express');
 const router = express.Router();
 const withdrawalController = require('../controllers/withdrawalController');
+const rateLimiters = require('../middleware/rateLimiting');
 
-// Request withdrawal
-router.post('/request', withdrawalController.requestWithdrawal);
+// Apply rate limiting - methods are already bound in controller constructor
+router.post('/request', 
+  rateLimiters.withdrawals,
+  withdrawalController.requestWithdrawal
+);
 
-// Get withdrawal history
-router.get('/history/:userId', withdrawalController.getWithdrawalHistory);
+router.get('/history/:userId', 
+  rateLimiters.general,
+  withdrawalController.getWithdrawalHistory
+);
 
-// Get withdrawal status
-router.get('/status/:withdrawalId', withdrawalController.getWithdrawalStatus);
+router.get('/status/:withdrawalId', 
+  rateLimiters.general,
+  withdrawalController.getWithdrawalStatus
+);
 
 module.exports = router;

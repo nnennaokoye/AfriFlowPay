@@ -6,11 +6,13 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
+    "build": "echo 'No build step required'",
     "test": "echo 'Tests not implemented yet'"
   },
   "dependencies": {
     "@hashgraph/sdk": "^2.49.0",
     "axios": "^1.11.0",
+    "bcrypt": "^6.0.0",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
     "dotenv": "^16.0.0",
