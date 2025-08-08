@@ -35,6 +35,7 @@ const app = express();
 app.use(helmet());
 app.use(cors({
   origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
 
     // Allow localhost during development
@@ -48,25 +49,47 @@ app.use(cors({
       'http://localhost:3002',
       'http://127.0.0.1:3000',
       'http://127.0.0.1:3002',
-      'https://afriflowpay-frontend.vercel.app'
+      'https://afriflowpay-frontend.vercel.app',
+      'https://afriflowpay-backend.vercel.app'
     ];
 
-    // Allow Vercel preview deployments (*.vercel.app)
-    const isVercelPreview = /https:\/\/.+\.vercel\.app$/.test(origin);
+    // Allow all Vercel deployments (*.vercel.app)
+    const isVercelDeployment = /https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(origin);
 
-    if (allowedOrigins.includes(origin) || isVercelPreview) {
+    if (allowedOrigins.includes(origin) || isVercelDeployment) {
       return callback(null, true);
     }
 
+    // Log blocked origins for debugging
+    console.log(`CORS blocked origin: ${origin}`);
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
 }));
 
-// Handle preflight quickly
-app.options('*', cors());
+// Handle preflight requests explicitly
+app.options('*', (req, res) => {
+  const origin = req.headers.origin;
+  
+  // Allow all Vercel deployments and localhost
+  if (!origin || 
+      origin.includes('localhost') || 
+      origin.includes('127.0.0.1') ||
+      /https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/.test(origin)) {
+    
+    res.header('Access-Control-Allow-Origin', origin || '*');
+    res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With,Accept,Origin');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Max-Age', '86400'); // 24 hours
+    return res.sendStatus(200);
+  }
+  
+  return res.sendStatus(403);
+});
 
 // Rate limiting - More lenient for development
 const limiter = rateLimit({
