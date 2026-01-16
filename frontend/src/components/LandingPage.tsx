@@ -17,7 +17,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
   };
 
   const handleAuthSuccess = (accountData: any) => {
-    // Authentication successful - user state will be updated in SessionContext
+    // Authentication successful - user state will be updated in SessionContext always
     // Navigation will happen automatically via useEffect in App.tsx
     console.log('Authentication successful for:', selectedAccountType);
     // Mark that we just authenticated via the regular landing auth flow
@@ -29,7 +29,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
     {
       icon: <Zap className="w-6 h-6" />,
       title: "Zero Fees",
-      description: "Gasless crypto payments with no hidden charges"
+      description: "Gasless crypto payments with no xtra or hidden charges"
     },
     {
       icon: <Smartphone className="w-6 h-6" />,
@@ -43,8 +43,8 @@ const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
     },
     {
       icon: <Globe className="w-6 h-6" />,
-      title: "For Africa",
-      description: "Designed specifically for African markets"
+      title: "For Africans",
+      description: "Designed specifically for the African markets"
     }
   ];
 

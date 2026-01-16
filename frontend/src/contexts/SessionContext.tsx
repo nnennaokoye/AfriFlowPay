@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { apiClient } from '../services/apiClient';
-import { AccountBalance, TransactionHistory, ApiError, CustodialBalanceResponse } from '../types/api';
+import { AccountBalance, TransactionHistory } from '../types/api';
 
 // User Types
 export interface User {

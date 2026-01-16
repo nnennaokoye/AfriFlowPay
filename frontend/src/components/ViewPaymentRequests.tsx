@@ -1,5 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useEffect, useState } from 'react';
 import { useSession } from '../contexts/SessionContext';
 import { apiClient } from '../services/apiClient';
 import { ArrowLeft, Clock, Link as LinkIcon, QrCode, Calendar, RefreshCw, Copy, CheckCircle } from 'lucide-react';

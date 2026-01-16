@@ -140,7 +140,7 @@ const PaymentAuthModal: React.FC<PaymentAuthModalProps> = ({ isOpen, nonce, onCl
                 className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-all text-left"
               >
                 <h3 className="font-semibold text-gray-800">Create New Account</h3>
-                <p className="text-sm text-gray-600">Start using AfriPayFlow with a new account</p>
+                <p className="text-sm text-gray-600">Start using AfriPayFlow with your new account</p>
               </button>
 
               <button
@@ -188,7 +188,7 @@ const PaymentAuthModal: React.FC<PaymentAuthModalProps> = ({ isOpen, nonce, onCl
                 </div>
                 {!isLogin && (
                   <p className="text-xs text-gray-500 mt-1">
-                    Password must be at least 6 characters long
+                    Password must be at least 6 characters long and contain special character
                   </p>
                 )}
               </div>

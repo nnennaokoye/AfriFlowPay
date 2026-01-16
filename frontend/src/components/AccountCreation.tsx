@@ -70,7 +70,7 @@ const AccountCreation: React.FC<AccountCreationProps> = ({ onAccountCreated, onB
     clearError();
   };
 
-  const containerVariants = {
+  const containerVariants = { 
     hidden: { opacity: 0, y: 20 },
     visible: { 
       opacity: 1, 
